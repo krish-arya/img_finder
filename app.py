@@ -1,4 +1,4 @@
-# streamlit_image_matcher.py (Enhanced with Deep Model Matching)
+# streamlit_image_matcher.py (Enhanced with Deep Model Matching + Auto Filtering + Download)
 
 import streamlit as st
 st.set_page_config(page_title="Model Image Matcher", layout="wide")
@@ -14,6 +14,7 @@ import torch
 import torchvision.transforms as T
 from torchvision.models import resnet50
 from sklearn.metrics.pairwise import cosine_similarity
+import zipfile
 
 # ----------------------- Load Deep Model -----------------------
 @st.cache_resource
@@ -50,6 +51,15 @@ def rename_images(image_paths, base_name):
         renamed.append((img_path, new_path))
     return renamed
 
+# ----------------------- Create ZIP of Matches -----------------------
+def zip_matched_images(paths):
+    zip_path = tempfile.NamedTemporaryFile(delete=False, suffix="_matches.zip").name
+    with zipfile.ZipFile(zip_path, 'w') as zipf:
+        for img_path in paths:
+            arcname = os.path.basename(img_path)
+            zipf.write(img_path, arcname=arcname)
+    return zip_path
+
 # ----------------------- Streamlit UI -----------------------
 st.title("🧠 Deep Learning-Based Model Image Matcher")
 
@@ -60,7 +70,6 @@ with col1:
 with col2:
     uploaded_refs = st.file_uploader("Upload reference images (multiple allowed)", type=['jpg', 'jpeg', 'png'], accept_multiple_files=True)
 
-similarity_threshold = st.slider("Minimum similarity threshold", 0.0, 1.0, 0.85, step=0.01)
 top_n = st.slider("How many top matches to show?", 1, 30, 5)
 
 if uploaded_query and uploaded_refs:
@@ -79,13 +88,15 @@ if uploaded_query and uploaded_refs:
         temp_ref = tempfile.NamedTemporaryFile(delete=False, suffix=ref_file.name[-4:])
         temp_ref.write(ref_file.read())
         temp_ref.close()
+        if not os.path.exists(temp_ref.name):
+            continue
         ref_temp_paths.append(temp_ref.name)
 
         feat = extract_features(temp_ref.name)
         sim = cosine_similarity([query_feat], [feat])[0][0]
         similarities.append((temp_ref.name, sim))
 
-    matched_images = [(path, score) for path, score in similarities if score >= similarity_threshold]
+    matched_images = [(path, score) for path, score in similarities if score >= 0.80]
     matched_images = sorted(matched_images, key=lambda x: x[1], reverse=True)[:top_n]
 
     if matched_images:
@@ -94,8 +105,12 @@ if uploaded_query and uploaded_refs:
         for i, (path, score) in enumerate(matched_images):
             with match_cols[i % len(match_cols)]:
                 st.image(str(path), caption=f"Similarity: {round(score, 4)}", use_column_width=True)
+
+        zip_file = zip_matched_images([p for p, _ in matched_images])
+        with open(zip_file, "rb") as f:
+            st.download_button("📦 Download Matched Images as ZIP", f, file_name="matched_images.zip")
     else:
-        st.info("❌ No strong matches found. Try adjusting the threshold or using clearer images.")
+        st.info("❌ No strong matches found (above 0.80 score). Try using clearer images.")
 
     with st.expander("📝 Rename matched images"):
         base_name = st.text_input("Enter base name for renaming matched images", "model")
@@ -105,6 +120,9 @@ if uploaded_query and uploaded_refs:
                 st.write(f"✅ {os.path.basename(old)} renamed to {os.path.basename(new)}")
 
     for path in ref_temp_paths:
-        os.remove(path)
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
 else:
     st.warning("📂 Please upload both a query image and at least one reference image.")
