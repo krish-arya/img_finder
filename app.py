@@ -1,8 +1,6 @@
-# streamlit_image_matcher.py (Enhanced: Folder Upload + Custom Naming)
+# streamlit_image_matcher_auto.py
 
 import streamlit as st
-st.set_page_config(page_title="Model Image Matcher", layout="wide", initial_sidebar_state="collapsed")
-
 import os
 import cv2
 import numpy as np
@@ -17,295 +15,96 @@ from sklearn.metrics.pairwise import cosine_similarity
 import zipfile
 import io
 
-# ----------------------- Custom CSS for Beautiful UI -----------------------
-def load_css():
-    st.markdown("""
-    <style>
-    /* Import Google Fonts */
-    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
-    
-    /* Main app styling */
+st.set_page_config(page_title="AI Image Matcher", layout="wide")
+
+# Custom CSS for beautiful UI
+st.markdown("""
+<style>
     .stApp {
-        font-family: 'Poppins', sans-serif;
-        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-        color: white;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     }
     
-    /* Remove default padding */
-    .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-    }
-    
-    /* Title styling */
     .main-title {
-        font-size: 3.5rem;
-        font-weight: 700;
+        font-size: 2.5rem;
+        font-weight: bold;
         text-align: center;
         color: white;
         margin-bottom: 2rem;
         text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
     }
     
-    .subtitle {
-        font-size: 1.2rem;
-        text-align: center;
-        color: rgba(255,255,255,0.8);
-        margin-bottom: 3rem;
-        font-weight: 300;
-    }
-    
-    /* Upload section styling */
-    .upload-card {
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
-        border-radius: 20px;
-        padding: 2rem;
-        margin: 1rem 0;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        transition: transform 0.3s ease;
-    }
-    
-    .upload-card:hover {
-        transform: translateY(-5px);
-    }
-    
-    .upload-title {
-        font-size: 1.5rem;
-        font-weight: 600;
-        color: white;
-        margin-bottom: 1rem;
-        text-align: center;
-    }
-    
-    .upload-subtitle {
-        color: rgba(255,255,255,0.7);
-        text-align: center;
-        margin-bottom: 1rem;
-    }
-    
-    /* File uploader custom styling */
-    .stFileUploader > div > div {
-        background: rgba(255, 255, 255, 0.05) !important;
-        border: 2px dashed rgba(255, 255, 255, 0.3) !important;
-        border-radius: 15px !important;
-        padding: 2rem !important;
-    }
-    
-    .stFileUploader > div > div:hover {
-        border-color: #4CAF50 !important;
-        background: rgba(76, 175, 80, 0.1) !important;
-    }
-    
-    /* Image containers */
-    .image-preview {
-        background: white;
-        border-radius: 15px;
-        padding: 1rem;
-        margin: 0.5rem;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-        transition: transform 0.3s ease;
-    }
-    
-    .image-preview:hover {
-        transform: scale(1.05);
-    }
-    
-    .image-preview img {
-        border-radius: 10px;
-        width: 100%;
-        height: auto;
-    }
-    
-    /* Match result cards */
-    .match-result {
-        background: rgba(255, 255, 255, 0.15);
-        backdrop-filter: blur(15px);
-        border-radius: 20px;
-        padding: 2rem;
-        margin: 1.5rem 0;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-    }
-    
-    .match-header {
-        text-align: center;
-        margin-bottom: 1.5rem;
-    }
-    
-    .score-badge {
-        background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
-        color: white;
-        padding: 0.7rem 1.5rem;
-        border-radius: 25px;
-        font-weight: 600;
-        font-size: 1.1rem;
-        display: inline-block;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        margin-bottom: 1rem;
-    }
-    
-    /* Button styling */
-    .stDownloadButton > button {
-        background: linear-gradient(45deg, #4CAF50, #45a049) !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 25px !important;
-        padding: 0.8rem 2rem !important;
-        font-weight: 600 !important;
-        font-size: 1.1rem !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
-        width: 100% !important;
-    }
-    
-    .stDownloadButton > button:hover {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3) !important;
-        background: linear-gradient(45deg, #45a049, #4CAF50) !important;
-    }
-
-    /* Preview button styling */
-    .stButton > button {
-        background: linear-gradient(45deg, #2196F3, #1976D2) !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 25px !important;
-        padding: 0.6rem 1.5rem !important;
-        font-weight: 600 !important;
-        font-size: 1rem !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
-        width: 100% !important;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3) !important;
-        background: linear-gradient(45deg, #1976D2, #2196F3) !important;
-    }
-    
-    /* Metrics styling */
-    .metric-container {
+    .upload-section {
         background: rgba(255, 255, 255, 0.1);
         backdrop-filter: blur(10px);
         border-radius: 15px;
         padding: 1.5rem;
-        text-align: center;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        margin: 0.5rem;
-        transition: transform 0.3s ease;
-    }
-    
-    .metric-container:hover {
-        transform: translateY(-3px);
-    }
-    
-    .metric-value {
-        font-size: 2rem;
-        font-weight: 700;
-        color: #4CAF50;
-        margin-bottom: 0.5rem;
-    }
-    
-    .metric-label {
-        color: rgba(255,255,255,0.8);
-        font-weight: 400;
-    }
-    
-    /* Progress bar */
-    .stProgress > div > div {
-        background: linear-gradient(90deg, #4CAF50, #45a049) !important;
-        border-radius: 10px !important;
-    }
-    
-    /* Info/warning boxes */
-    .stInfo {
-        background: rgba(33, 150, 243, 0.2) !important;
-        backdrop-filter: blur(10px) !important;
-        border-radius: 15px !important;
-        border: 1px solid rgba(33, 150, 243, 0.3) !important;
-        color: white !important;
-    }
-    
-    .stWarning {
-        background: rgba(255, 193, 7, 0.2) !important;
-        backdrop-filter: blur(10px) !important;
-        border-radius: 15px !important;
-        border: 1px solid rgba(255, 193, 7, 0.3) !important;
-        color: white !important;
-    }
-    
-    .stError {
-        background: rgba(244, 67, 54, 0.2) !important;
-        backdrop-filter: blur(10px) !important;
-        border-radius: 15px !important;
-        border: 1px solid rgba(244, 67, 54, 0.3) !important;
-        color: white !important;
-    }
-    
-    /* Sidebar styling */
-    .css-1d391kg {
-        background: rgba(255, 255, 255, 0.1) !important;
-        backdrop-filter: blur(10px) !important;
-    }
-    
-    /* Welcome card */
-    .welcome-card {
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(15px);
-        border-radius: 25px;
-        padding: 3rem;
-        text-align: center;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        margin: 2rem 0;
-    }
-    
-    /* Loading animation */
-    .loading-text {
-        text-align: center;
-        font-size: 1.3rem;
-        color: white;
-        margin: 2rem 0;
-        font-weight: 500;
-    }
-    
-    /* Divider */
-    .custom-divider {
-        height: 2px;
-        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-        border: none;
-        margin: 2rem 0;
-    }
-
-    /* Custom naming section */
-    .naming-card {
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
-        border-radius: 20px;
-        padding: 2rem;
         margin: 1rem 0;
         border: 1px solid rgba(255, 255, 255, 0.2);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    }
+    
+    .query-preview {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 15px;
+        padding: 1rem;
+        margin: 1rem 0;
+        text-align: center;
+    }
+    
+    .match-card {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 15px;
+        padding: 1rem;
+        margin: 0.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        text-align: center;
+    }
+    
+    .download-section {
+        background: rgba(76, 175, 80, 0.2);
+        border-radius: 15px;
+        padding: 2rem;
+        margin: 2rem 0;
+        text-align: center;
+        border: 1px solid rgba(76, 175, 80, 0.3);
+    }
+    
+    .stButton > button {
+        background: linear-gradient(45deg, #4CAF50, #45a049);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 0.5rem 1rem;
+        font-weight: bold;
+        width: 100%;
+    }
+    
+    .preview-button > button {
+        background: linear-gradient(45deg, #2196F3, #1976D2);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 0.5rem 1rem;
+        font-weight: bold;
+        width: 100%;
     }
     
     .stTextInput > div > div > input {
-        background: rgba(255, 255, 255, 0.1) !important;
-        color: white !important;
-        border: 1px solid rgba(255, 255, 255, 0.3) !important;
-        border-radius: 10px !important;
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.3);
     }
     
-    .stTextInput > div > div > input:focus {
-        border-color: #4CAF50 !important;
-        box-shadow: 0 0 0 0.2rem rgba(76, 175, 80, 0.25) !important;
+    .results-header {
+        color: white;
+        font-size: 1.5rem;
+        font-weight: bold;
+        text-align: center;
+        margin: 1rem 0;
     }
-    </style>
-    """, unsafe_allow_html=True)
+</style>
+""", unsafe_allow_html=True)
 
-# ----------------------- Load Deep Model -----------------------
+# Load Deep Model
 @st.cache_resource
 def load_model():
     try:
@@ -324,13 +123,12 @@ if model:
         T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
-# ----------------------- Deep Feature Extraction -----------------------
+# Deep Feature Extraction
 def extract_features(image_file_or_path):
     try:
         if isinstance(image_file_or_path, str):
             img = Image.open(image_file_or_path).convert("RGB")
         else:
-            # Handle uploaded file
             img = Image.open(image_file_or_path).convert("RGB")
         
         tensor = transform(img).unsqueeze(0)
@@ -341,24 +139,21 @@ def extract_features(image_file_or_path):
         st.error(f"Error extracting features: {e}")
         return None
 
-# ----------------------- Create ZIP with Custom Names -----------------------
+# Create ZIP with Custom Names
 def create_zip_from_matches(matched_images, ref_files_dict, custom_name="match"):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for i, (file_name, score) in enumerate(matched_images):
             if file_name in ref_files_dict:
                 file_data = ref_files_dict[file_name]
-                # Get original extension
                 extension = file_name.rsplit('.', 1)[1] if '.' in file_name else 'jpg'
-                # Create custom filename
                 new_filename = f"{custom_name}_{i+1}.{extension}"
                 zipf.writestr(new_filename, file_data)
     zip_buffer.seek(0)
     return zip_buffer.getvalue()
 
-# ----------------------- Extract Images from ZIP folder -----------------------
+# Extract Images from ZIP folder
 def extract_images_from_zip(zip_file):
-    """Extract images from uploaded ZIP file"""
     try:
         with zipfile.ZipFile(zip_file, 'r') as zip_ref:
             image_files = []
@@ -367,13 +162,11 @@ def extract_images_from_zip(zip_file):
             for file_info in zip_ref.filelist:
                 if not file_info.is_dir():
                     filename = file_info.filename
-                    # Check if it's an image file
                     if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
                         try:
                             file_data = zip_ref.read(filename)
-                            # Create a file-like object
                             file_obj = io.BytesIO(file_data)
-                            file_obj.name = filename.split('/')[-1]  # Get just the filename
+                            file_obj.name = filename.split('/')[-1]
                             image_files.append(file_obj)
                             file_data_dict[file_obj.name] = file_data
                         except Exception as e:
@@ -385,332 +178,228 @@ def extract_images_from_zip(zip_file):
         st.error(f"Error extracting ZIP file: {e}")
         return [], {}
 
-# ----------------------- Main UI -----------------------
+# Main Application
 def main():
-    load_css()
-    
-    # Header
     st.markdown('<h1 class="main-title">🧠 AI Image Matcher</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="subtitle">Find similar images using deep learning and computer vision</p>', unsafe_allow_html=True)
     
-    # Sidebar for settings
-    with st.sidebar:
-        st.markdown("### ⚙️ **Settings**")
-        similarity_threshold = st.slider("Similarity Threshold", 0.0, 1.0, 0.80, 0.01)
-        show_scores = st.checkbox("Show Similarity Scores", True)
-        max_matches = st.number_input("Max Matches to Show", 1, 50, 10)
-        
-        st.markdown("---")
-        st.markdown("### 📖 **How it works**")
-        st.markdown("""
-        1. Upload a query image
-        2. Upload reference images or ZIP folder
-        3. AI analyzes features
-        4. Get similarity matches
-        5. Download with custom names
-        """)
+    col1, col2 = st.columns([1, 1])
     
-    # Upload sections
-    col1, col2 = st.columns([1, 1], gap="large")
-    
+    # Query Image Section
     with col1:
         st.markdown("""
-        <div class="upload-card">
-            <h3 class="upload-title">🎯 Query Image</h3>
-            <p class="upload-subtitle">Upload the image you want to find matches for</p>
+        <div class="upload-section">
+            <h3 style="color: white; text-align: center;">🎯 Query Image</h3>
         </div>
         """, unsafe_allow_html=True)
-        uploaded_query = st.file_uploader("Choose query image", type=['jpg', 'jpeg', 'png'], key="query")
+        
+        uploaded_query = st.file_uploader("Upload the image to find matches for", type=['jpg', 'jpeg', 'png'])
+        
+        # Always show query image if uploaded
+        if uploaded_query:
+            st.markdown("""
+            <div class="query-preview">
+                <h4 style="color: white;">Query Image Preview</h4>
+            </div>
+            """, unsafe_allow_html=True)
+            st.image(uploaded_query, use_column_width=True, caption="Your Query Image")
     
+    # Reference Images Section
     with col2:
         st.markdown("""
-        <div class="upload-card">
-            <h3 class="upload-title">📚 Reference Images</h3>
-            <p class="upload-subtitle">Upload multiple images or a ZIP folder</p>
+        <div class="upload-section">
+            <h3 style="color: white; text-align: center;">📚 Reference Images</h3>
         </div>
         """, unsafe_allow_html=True)
         
-        # Option to choose between individual files or ZIP
-        upload_method = st.radio("Choose upload method:", 
-                                ["📁 Upload multiple images", "🗂️ Upload ZIP folder"], 
-                                horizontal=True)
+        upload_method = st.radio("Choose upload method:", ["Multiple Images", "ZIP Folder"])
         
-        if upload_method == "📁 Upload multiple images":
-            uploaded_refs = st.file_uploader("Choose reference images", 
+        if upload_method == "Multiple Images":
+            uploaded_refs = st.file_uploader("Upload reference images", 
                                             type=['jpg', 'jpeg', 'png'], 
-                                            accept_multiple_files=True, 
-                                            key="refs")
+                                            accept_multiple_files=True)
             ref_files_dict = {}
         else:
-            uploaded_zip = st.file_uploader("Choose ZIP folder containing images", 
-                                          type=['zip'], 
-                                          key="zip_refs")
+            uploaded_zip = st.file_uploader("Upload ZIP folder", type=['zip'])
             if uploaded_zip:
                 uploaded_refs, ref_files_dict = extract_images_from_zip(uploaded_zip)
                 if uploaded_refs:
-                    st.success(f"✅ Extracted {len(uploaded_refs)} images from ZIP folder")
+                    st.success(f"✅ Extracted {len(uploaded_refs)} images")
                 else:
-                    st.error("❌ No valid images found in ZIP folder")
                     uploaded_refs = []
             else:
                 uploaded_refs = []
                 ref_files_dict = {}
+        
+        # Preview reference images button
+        if uploaded_refs:
+            st.markdown('<div class="preview-button">', unsafe_allow_html=True)
+            if st.button(f"👁️ Preview Reference Images ({len(uploaded_refs)} files)"):
+                st.session_state.show_refs = not st.session_state.get('show_refs', False)
+            st.markdown('</div>', unsafe_allow_html=True)
     
-    # Custom naming section
+    # Show reference images preview if button clicked
+    if uploaded_refs and st.session_state.get('show_refs', False):
+        st.markdown("---")
+        st.markdown('<p style="color: white; text-align: center; font-size: 1.2rem;">📖 Reference Images Preview</p>', unsafe_allow_html=True)
+        
+        # Show in grid
+        cols_per_row = 4
+        num_images = len(uploaded_refs)
+        
+        for i in range(0, num_images, cols_per_row):
+            cols = st.columns(cols_per_row)
+            for j in range(cols_per_row):
+                if i + j < num_images:
+                    with cols[j]:
+                        ref_img = uploaded_refs[i + j]
+                        img_name = ref_img.name if hasattr(ref_img, 'name') else f"Image {i+j+1}"
+                        st.image(ref_img, caption=img_name, use_column_width=True)
+    
+    # Processing Section
     if uploaded_query and uploaded_refs:
+        st.markdown("---")
+        
+        # Custom naming section
         st.markdown("""
-        <div class="naming-card">
-            <h3 class="upload-title">🏷️ Custom Naming</h3>
-            <p class="upload-subtitle">Set a custom name for downloaded matches</p>
+        <div class="upload-section">
+            <h3 style="color: white; text-align: center;">🏷️ Set Download Name</h3>
         </div>
         """, unsafe_allow_html=True)
         
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            custom_name = st.text_input("Base name for downloaded images:", 
-                                      value="model", 
-                                      help="Images will be named as: [name]_1, [name]_2, etc.")
-        with col2:
-            st.markdown("<br>", unsafe_allow_html=True)  # Spacing
-            st.markdown("**Preview:** `model_1.jpg`, `model_2.png`")
-    
-    st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
-    
-    if uploaded_query and uploaded_refs:
-        # Show uploaded images preview
-        st.markdown("### 🖼️ **Image Preview**")
+        custom_name = st.text_input("Enter base name for matched images:", 
+                                   value="", 
+                                   placeholder="e.g., model, person, object...")
         
-        # Query image preview (always shown)
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("**Query Image**")
-            with st.container():
-                st.markdown('<div class="image-preview">', unsafe_allow_html=True)
-                st.image(uploaded_query, use_column_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
+        # Only show process button when name is entered
+        if custom_name.strip():
+            if st.button("🚀 Start Processing & Find Matches", type="primary"):
+                st.session_state.processing = True
+                st.session_state.custom_name = custom_name.strip()
+        else:
+            st.info("💡 Enter a name above to start processing")
         
-        with col2:
-            st.markdown(f"**Reference Images ({len(uploaded_refs)} files)**")
-            
-            # Button to show/hide reference images preview
-            if st.button("👁️ Show Reference Images Preview", key="preview_btn"):
-                st.session_state.show_preview = not st.session_state.get('show_preview', False)
-            
-            # Show preview only if button was clicked and state is True
-            if st.session_state.get('show_preview', False):
-                # Create a grid for reference images (show first few)
-                preview_count = min(6, len(uploaded_refs))  # Show max 6 for preview
-                cols = st.columns(min(3, preview_count))
-                for i in range(preview_count):
-                    with cols[i % len(cols)]:
-                        st.markdown('<div class="image-preview">', unsafe_allow_html=True)
-                        if hasattr(uploaded_refs[i], 'name'):
-                            caption = uploaded_refs[i].name
-                        else:
-                            caption = f"Image {i+1}"
-                        st.image(uploaded_refs[i], caption=caption, use_column_width=True)
-                        st.markdown('</div>', unsafe_allow_html=True)
+        # Processing and Results
+        if st.session_state.get('processing', False):
+            with st.spinner("🔄 AI is analyzing images..."):
+                # Extract query features
+                query_features = extract_features(uploaded_query)
                 
-                if len(uploaded_refs) > 6:
-                    st.info(f"... and {len(uploaded_refs) - 6} more images")
-            else:
-                st.info("Click the button above to preview reference images")
-        
-        st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
-        
-        # Processing with progress bar
-        st.markdown('<div class="loading-text">🔄 Processing images with AI...</div>', unsafe_allow_html=True)
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        try:
-            # Extract query features
-            status_text.text("Extracting features from query image...")
-            progress_bar.progress(0.1)  # 10%
-            query_features = extract_features(uploaded_query)
-            
-            if query_features is None:
-                st.error("Failed to extract features from query image")
-                return
-            
-            # Process reference images
-            similarities = []
-            
-            # If we're using individual files, we need to populate ref_files_dict
-            if upload_method == "📁 Upload multiple images":
-                ref_files_dict = {}
-                for ref_file in uploaded_refs:
-                    ref_file.seek(0)
-                    ref_files_dict[ref_file.name] = ref_file.read()
-                    ref_file.seek(0)
-            
-            total_refs = len(uploaded_refs)
-            
-            for i, ref_file in enumerate(uploaded_refs):
-                file_name = ref_file.name if hasattr(ref_file, 'name') else f"image_{i+1}.jpg"
-                status_text.text(f"Processing reference image {i+1}/{total_refs}: {file_name}")
-                # Fixed progress calculation - ensure it stays between 0.1 and 0.9
-                progress_value = 0.1 + (0.8 * (i+1) / total_refs)
-                progress_bar.progress(min(progress_value, 0.9))
+                if query_features is None:
+                    st.error("Failed to extract features from query image")
+                    st.session_state.processing = False
+                    return
                 
-                # Extract features
-                ref_features = extract_features(ref_file)
+                # Process reference images
+                similarities = []
                 
-                if ref_features is not None:
-                    # Calculate similarity
-                    similarity = cosine_similarity([query_features], [ref_features])[0][0]
-                    similarities.append((file_name, similarity))
+                # Populate ref_files_dict for individual files
+                if upload_method == "Multiple Images":
+                    ref_files_dict = {}
+                    for ref_file in uploaded_refs:
+                        ref_file.seek(0)
+                        ref_files_dict[ref_file.name] = ref_file.read()
+                        ref_file.seek(0)
+                
+                # Calculate similarities
+                progress_bar = st.progress(0)
+                for i, ref_file in enumerate(uploaded_refs):
+                    file_name = ref_file.name if hasattr(ref_file, 'name') else f"image_{i+1}.jpg"
+                    ref_features = extract_features(ref_file)
+                    
+                    if ref_features is not None:
+                        similarity = cosine_similarity([query_features], [ref_features])[0][0]
+                        similarities.append((file_name, similarity))
+                    
+                    progress_bar.progress((i + 1) / len(uploaded_refs))
+                
+                progress_bar.empty()
+                
+                # Filter matches above 0.8 threshold
+                matched_images = [(name, score) for name, score in similarities if score >= 0.8]
+                matched_images = sorted(matched_images, key=lambda x: x[1], reverse=True)
+                
+                # Store results in session state
+                st.session_state.matched_images = matched_images
+                st.session_state.ref_files_dict = ref_files_dict
+                st.session_state.processing = False
+                st.session_state.results_ready = True
+        
+        # Show Results
+        if st.session_state.get('results_ready', False):
+            matched_images = st.session_state.get('matched_images', [])
+            ref_files_dict = st.session_state.get('ref_files_dict', {})
+            custom_name = st.session_state.get('custom_name', 'match')
             
-            status_text.text("Analyzing matches...")
-            progress_bar.progress(0.95)
-            
-            # Filter and sort matches
-            matched_images = [(name, score) for name, score in similarities if score >= similarity_threshold]
-            matched_images = sorted(matched_images, key=lambda x: x[1], reverse=True)
-            matched_images = matched_images[:max_matches]  # Limit results
-            
-            progress_bar.progress(1.0)
-            status_text.empty()
-            progress_bar.empty()
+            st.markdown("---")
             
             if matched_images:
-                # Display results
-                st.markdown(f"### 🎯 **Found {len(matched_images)} Matching Images**")
+                st.markdown(f'<p class="results-header">🎯 Found {len(matched_images)} High-Quality Matches (≥80% similarity)</p>', unsafe_allow_html=True)
                 
-                # Create metrics row
-                metric_cols = st.columns(4)
+                # Show matches in a beautiful grid
+                cols_per_row = 3
+                for i in range(0, len(matched_images), cols_per_row):
+                    cols = st.columns(cols_per_row)
+                    for j in range(cols_per_row):
+                        if i + j < len(matched_images):
+                            file_name, score = matched_images[i + j]
+                            with cols[j]:
+                                st.markdown(f"""
+                                <div class="match-card">
+                                    <h4 style="color: white;">Match {i+j+1}</h4>
+                                    <p style="color: #4CAF50; font-weight: bold;">Similarity: {score:.1%}</p>
+                                    <p style="color: white; font-size: 0.9rem;">Will be: {custom_name}_{i+j+1}</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                
+                                # Find and show the reference image
+                                for ref_img in uploaded_refs:
+                                    ref_name = ref_img.name if hasattr(ref_img, 'name') else f"image_{uploaded_refs.index(ref_img)+1}"
+                                    if ref_name == file_name:
+                                        st.image(ref_img, use_column_width=True)
+                                        break
                 
-                with metric_cols[0]:
-                    st.markdown("""
-                    <div class="metric-container">
-                        <div class="metric-value">{}</div>
-                        <div class="metric-label">Total Matches</div>
-                    </div>
-                    """.format(len(matched_images)), unsafe_allow_html=True)
+                # Download Section
+                st.markdown("""
+                <div class="download-section">
+                    <h3 style="color: white;">📦 Download Your Matches</h3>
+                    <p style="color: white;">All matched images will be renamed and packaged for you!</p>
+                </div>
+                """, unsafe_allow_html=True)
                 
-                with metric_cols[1]:
-                    best_score = max(matched_images, key=lambda x: x[1])[1]
-                    st.markdown("""
-                    <div class="metric-container">
-                        <div class="metric-value">{:.3f}</div>
-                        <div class="metric-label">Best Match</div>
-                    </div>
-                    """.format(best_score), unsafe_allow_html=True)
+                # Create and offer download
+                zip_data = create_zip_from_matches(matched_images, ref_files_dict, custom_name)
                 
-                with metric_cols[2]:
-                    avg_score = sum(score for _, score in matched_images) / len(matched_images)
-                    st.markdown("""
-                    <div class="metric-container">
-                        <div class="metric-value">{:.3f}</div>
-                        <div class="metric-label">Average Score</div>
-                    </div>
-                    """.format(avg_score), unsafe_allow_html=True)
-                
-                with metric_cols[3]:
-                    st.markdown("""
-                    <div class="metric-container">
-                        <div class="metric-value">{:.2f}</div>
-                        <div class="metric-label">Threshold</div>
-                    </div>
-                    """.format(similarity_threshold), unsafe_allow_html=True)
-                
-                st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
-                
-                # Display each match (show first 5 in detail)
-                display_count = min(5, len(matched_images))
-                for i in range(display_count):
-                    file_name, score = matched_images[i]
-                    st.markdown('<div class="match-result">', unsafe_allow_html=True)
-                    
-                    # Score badge and match info
-                    st.markdown('<div class="match-header">', unsafe_allow_html=True)
-                    if show_scores:
-                        st.markdown(f'<div class="score-badge">Match {i+1} • Similarity: {score:.4f}</div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown(f'<div class="score-badge">Match {i+1}</div>', unsafe_allow_html=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    # Images side by side
-                    img_col1, img_col2 = st.columns(2)
-                    
-                    with img_col1:
-                        st.markdown("**Query Image**")
-                        st.image(uploaded_query, use_column_width=True)
-                    
-                    with img_col2:
-                        st.markdown(f"**Matched: {file_name}**")
-                        st.markdown(f"**Will be renamed to: {custom_name}_{i+1}**")
-                        # Find the corresponding reference image
-                        for ref_img in uploaded_refs:
-                            ref_name = ref_img.name if hasattr(ref_img, 'name') else f"image_{uploaded_refs.index(ref_img)+1}"
-                            if ref_name == file_name:
-                                st.image(ref_img, use_column_width=True)
-                                break
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
-                
-                if len(matched_images) > 5:
-                    st.info(f"... and {len(matched_images) - 5} more matches will be included in the download")
-                
-                # Download section
-                st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
-                st.markdown("### 📦 **Download Results**")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    # Create ZIP file with custom names
-                    zip_data = create_zip_from_matches(matched_images, ref_files_dict, custom_name)
+                col1, col2, col3 = st.columns([1, 2, 1])
+                with col2:
                     st.download_button(
-                        label=f"📥 Download All Matches as {custom_name}_*.jpg",
+                        label=f"📥 Download {len(matched_images)} matches as {custom_name}_*.zip",
                         data=zip_data,
                         file_name=f"{custom_name}_matches_{len(matched_images)}_images.zip",
-                        mime="application/zip"
+                        mime="application/zip",
+                        type="primary"
                     )
                 
-                with col2:
-                    # Preview of naming
-                    st.info(f"💡 {len(matched_images)} images will be downloaded with names: `{custom_name}_1`, `{custom_name}_2`, etc.")
-            
-            else:
-                st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
-                st.warning(f"❌ No matches found above the similarity threshold of {similarity_threshold:.2f}")
+                st.success(f"✅ Ready to download {len(matched_images)} high-quality matches!")
                 
-                # Show all similarities for debugging
-                if similarities:
-                    with st.expander("🔍 View All Similarity Scores"):
-                        all_similarities = sorted(similarities, key=lambda x: x[1], reverse=True)
-                        for name, score in all_similarities:
-                            st.write(f"**{name}**: {score:.4f}")
-                        
-                        if all_similarities:
-                            best_score = all_similarities[0][1]
-                            st.info(f"💡 Try lowering the threshold to {best_score:.2f} to see the best match!")
-        
-        except Exception as e:
-            st.error(f"An error occurred during processing: {str(e)}")
-            import traceback
-            st.code(traceback.format_exc())
+            else:
+                st.markdown('<p class="results-header">❌ No matches found above 80% similarity</p>', unsafe_allow_html=True)
+                st.info("Try uploading different reference images or a different query image.")
+    
+    elif uploaded_query or uploaded_refs:
+        st.info("📋 Upload both query and reference images to start matching")
     
     else:
-        # Welcome message when no files are uploaded
         st.markdown("""
-        <div class="welcome-card">
-            <h3 style="color: white; margin-bottom: 1.5rem;">🚀 Welcome to AI Image Matching!</h3>
-            <p style="color: rgba(255,255,255,0.8); font-size: 1.1rem; line-height: 1.6;">
-                Upload a query image and reference images to find the best matches using deep learning.<br><br>
-                <strong>✨ New Features:</strong><br>
-                • 📁 Upload individual images or ZIP folders<br>
-                • 🏷️ Custom naming for downloaded matches<br>
-                • ResNet-50 deep learning model<br>
-                • Cosine similarity matching<br>
-                • Batch processing & ZIP download<br>
-                • Adjustable similarity thresholds
+        <div style="text-align: center; color: white; padding: 3rem;">
+            <h3>🚀 Welcome to AI Image Matching!</h3>
+            <p style="font-size: 1.1rem; opacity: 0.8;">
+                Upload a query image and reference images to find matches with 80%+ similarity using deep learning.
             </p>
         </div>
         """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     if model is None:
-        st.error("⚠️ Model failed to load. Please check your PyTorch installation.")
+        st.error("Model failed to load. Please check PyTorch installation.")
     else:
         main()
