@@ -1,4 +1,4 @@
-# streamlit_image_matcher.py (Fixed: Progress bar + Visible UI)
+# streamlit_image_matcher.py (Enhanced: Folder Upload + Custom Naming)
 
 import streamlit as st
 st.set_page_config(page_title="Model Image Matcher", layout="wide", initial_sidebar_state="collapsed")
@@ -165,6 +165,26 @@ def load_css():
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3) !important;
         background: linear-gradient(45deg, #45a049, #4CAF50) !important;
     }
+
+    /* Preview button styling */
+    .stButton > button {
+        background: linear-gradient(45deg, #2196F3, #1976D2) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 25px !important;
+        padding: 0.6rem 1.5rem !important;
+        font-weight: 600 !important;
+        font-size: 1rem !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
+        width: 100% !important;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3) !important;
+        background: linear-gradient(45deg, #1976D2, #2196F3) !important;
+    }
     
     /* Metrics styling */
     .metric-container {
@@ -259,6 +279,29 @@ def load_css():
         border: none;
         margin: 2rem 0;
     }
+
+    /* Custom naming section */
+    .naming-card {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 2rem;
+        margin: 1rem 0;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    }
+    
+    .stTextInput > div > div > input {
+        background: rgba(255, 255, 255, 0.1) !important;
+        color: white !important;
+        border: 1px solid rgba(255, 255, 255, 0.3) !important;
+        border-radius: 10px !important;
+    }
+    
+    .stTextInput > div > div > input:focus {
+        border-color: #4CAF50 !important;
+        box-shadow: 0 0 0 0.2rem rgba(76, 175, 80, 0.25) !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -298,20 +341,49 @@ def extract_features(image_file_or_path):
         st.error(f"Error extracting features: {e}")
         return None
 
-# ----------------------- Create ZIP of Matches -----------------------
-def create_zip_from_matches(matched_images, ref_files_dict):
+# ----------------------- Create ZIP with Custom Names -----------------------
+def create_zip_from_matches(matched_images, ref_files_dict, custom_name="match"):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for i, (file_name, score) in enumerate(matched_images):
             if file_name in ref_files_dict:
                 file_data = ref_files_dict[file_name]
-                # Create a meaningful filename
-                base_name = file_name.rsplit('.', 1)[0]
+                # Get original extension
                 extension = file_name.rsplit('.', 1)[1] if '.' in file_name else 'jpg'
-                new_filename = f"match_{i+1}_{base_name}_score_{score:.4f}.{extension}"
+                # Create custom filename
+                new_filename = f"{custom_name}_{i+1}.{extension}"
                 zipf.writestr(new_filename, file_data)
     zip_buffer.seek(0)
     return zip_buffer.getvalue()
+
+# ----------------------- Extract Images from ZIP folder -----------------------
+def extract_images_from_zip(zip_file):
+    """Extract images from uploaded ZIP file"""
+    try:
+        with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+            image_files = []
+            file_data_dict = {}
+            
+            for file_info in zip_ref.filelist:
+                if not file_info.is_dir():
+                    filename = file_info.filename
+                    # Check if it's an image file
+                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
+                        try:
+                            file_data = zip_ref.read(filename)
+                            # Create a file-like object
+                            file_obj = io.BytesIO(file_data)
+                            file_obj.name = filename.split('/')[-1]  # Get just the filename
+                            image_files.append(file_obj)
+                            file_data_dict[file_obj.name] = file_data
+                        except Exception as e:
+                            st.warning(f"Could not read {filename}: {e}")
+                            continue
+            
+            return image_files, file_data_dict
+    except Exception as e:
+        st.error(f"Error extracting ZIP file: {e}")
+        return [], {}
 
 # ----------------------- Main UI -----------------------
 def main():
@@ -332,9 +404,10 @@ def main():
         st.markdown("### 📖 **How it works**")
         st.markdown("""
         1. Upload a query image
-        2. Upload reference images  
+        2. Upload reference images or ZIP folder
         3. AI analyzes features
         4. Get similarity matches
+        5. Download with custom names
         """)
     
     # Upload sections
@@ -353,10 +426,53 @@ def main():
         st.markdown("""
         <div class="upload-card">
             <h3 class="upload-title">📚 Reference Images</h3>
-            <p class="upload-subtitle">Upload multiple images to search through</p>
+            <p class="upload-subtitle">Upload multiple images or a ZIP folder</p>
         </div>
         """, unsafe_allow_html=True)
-        uploaded_refs = st.file_uploader("Choose reference images", type=['jpg', 'jpeg', 'png'], accept_multiple_files=True, key="refs")
+        
+        # Option to choose between individual files or ZIP
+        upload_method = st.radio("Choose upload method:", 
+                                ["📁 Upload multiple images", "🗂️ Upload ZIP folder"], 
+                                horizontal=True)
+        
+        if upload_method == "📁 Upload multiple images":
+            uploaded_refs = st.file_uploader("Choose reference images", 
+                                            type=['jpg', 'jpeg', 'png'], 
+                                            accept_multiple_files=True, 
+                                            key="refs")
+            ref_files_dict = {}
+        else:
+            uploaded_zip = st.file_uploader("Choose ZIP folder containing images", 
+                                          type=['zip'], 
+                                          key="zip_refs")
+            if uploaded_zip:
+                uploaded_refs, ref_files_dict = extract_images_from_zip(uploaded_zip)
+                if uploaded_refs:
+                    st.success(f"✅ Extracted {len(uploaded_refs)} images from ZIP folder")
+                else:
+                    st.error("❌ No valid images found in ZIP folder")
+                    uploaded_refs = []
+            else:
+                uploaded_refs = []
+                ref_files_dict = {}
+    
+    # Custom naming section
+    if uploaded_query and uploaded_refs:
+        st.markdown("""
+        <div class="naming-card">
+            <h3 class="upload-title">🏷️ Custom Naming</h3>
+            <p class="upload-subtitle">Set a custom name for downloaded matches</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            custom_name = st.text_input("Base name for downloaded images:", 
+                                      value="model", 
+                                      help="Images will be named as: [name]_1, [name]_2, etc.")
+        with col2:
+            st.markdown("<br>", unsafe_allow_html=True)  # Spacing
+            st.markdown("**Preview:** `model_1.jpg`, `model_2.png`")
     
     st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
     
@@ -364,7 +480,7 @@ def main():
         # Show uploaded images preview
         st.markdown("### 🖼️ **Image Preview**")
         
-        # Query image preview
+        # Query image preview (always shown)
         col1, col2 = st.columns([1, 2])
         with col1:
             st.markdown("**Query Image**")
@@ -375,13 +491,30 @@ def main():
         
         with col2:
             st.markdown(f"**Reference Images ({len(uploaded_refs)} files)**")
-            # Create a grid for reference images
-            cols = st.columns(min(3, len(uploaded_refs)))
-            for i, ref_img in enumerate(uploaded_refs):
-                with cols[i % len(cols)]:
-                    st.markdown('<div class="image-preview">', unsafe_allow_html=True)
-                    st.image(ref_img, caption=ref_img.name, use_column_width=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Button to show/hide reference images preview
+            if st.button("👁️ Show Reference Images Preview", key="preview_btn"):
+                st.session_state.show_preview = not st.session_state.get('show_preview', False)
+            
+            # Show preview only if button was clicked and state is True
+            if st.session_state.get('show_preview', False):
+                # Create a grid for reference images (show first few)
+                preview_count = min(6, len(uploaded_refs))  # Show max 6 for preview
+                cols = st.columns(min(3, preview_count))
+                for i in range(preview_count):
+                    with cols[i % len(cols)]:
+                        st.markdown('<div class="image-preview">', unsafe_allow_html=True)
+                        if hasattr(uploaded_refs[i], 'name'):
+                            caption = uploaded_refs[i].name
+                        else:
+                            caption = f"Image {i+1}"
+                        st.image(uploaded_refs[i], caption=caption, use_column_width=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                
+                if len(uploaded_refs) > 6:
+                    st.info(f"... and {len(uploaded_refs) - 6} more images")
+            else:
+                st.info("Click the button above to preview reference images")
         
         st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
         
@@ -402,19 +535,23 @@ def main():
             
             # Process reference images
             similarities = []
-            ref_files_dict = {}  # Store file data for ZIP creation
+            
+            # If we're using individual files, we need to populate ref_files_dict
+            if upload_method == "📁 Upload multiple images":
+                ref_files_dict = {}
+                for ref_file in uploaded_refs:
+                    ref_file.seek(0)
+                    ref_files_dict[ref_file.name] = ref_file.read()
+                    ref_file.seek(0)
+            
             total_refs = len(uploaded_refs)
             
             for i, ref_file in enumerate(uploaded_refs):
-                status_text.text(f"Processing reference image {i+1}/{total_refs}: {ref_file.name}")
+                file_name = ref_file.name if hasattr(ref_file, 'name') else f"image_{i+1}.jpg"
+                status_text.text(f"Processing reference image {i+1}/{total_refs}: {file_name}")
                 # Fixed progress calculation - ensure it stays between 0.1 and 0.9
                 progress_value = 0.1 + (0.8 * (i+1) / total_refs)
                 progress_bar.progress(min(progress_value, 0.9))
-                
-                # Store file data
-                ref_file.seek(0)  # Reset file pointer
-                ref_files_dict[ref_file.name] = ref_file.read()
-                ref_file.seek(0)  # Reset again for feature extraction
                 
                 # Extract features
                 ref_features = extract_features(ref_file)
@@ -422,7 +559,7 @@ def main():
                 if ref_features is not None:
                     # Calculate similarity
                     similarity = cosine_similarity([query_features], [ref_features])[0][0]
-                    similarities.append((ref_file.name, similarity))
+                    similarities.append((file_name, similarity))
             
             status_text.text("Analyzing matches...")
             progress_bar.progress(0.95)
@@ -479,8 +616,10 @@ def main():
                 
                 st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
                 
-                # Display each match
-                for i, (file_name, score) in enumerate(matched_images):
+                # Display each match (show first 5 in detail)
+                display_count = min(5, len(matched_images))
+                for i in range(display_count):
+                    file_name, score = matched_images[i]
                     st.markdown('<div class="match-result">', unsafe_allow_html=True)
                     
                     # Score badge and match info
@@ -500,13 +639,18 @@ def main():
                     
                     with img_col2:
                         st.markdown(f"**Matched: {file_name}**")
+                        st.markdown(f"**Will be renamed to: {custom_name}_{i+1}**")
                         # Find the corresponding reference image
                         for ref_img in uploaded_refs:
-                            if ref_img.name == file_name:
+                            ref_name = ref_img.name if hasattr(ref_img, 'name') else f"image_{uploaded_refs.index(ref_img)+1}"
+                            if ref_name == file_name:
                                 st.image(ref_img, use_column_width=True)
                                 break
                     
                     st.markdown('</div>', unsafe_allow_html=True)
+                
+                if len(matched_images) > 5:
+                    st.info(f"... and {len(matched_images) - 5} more matches will be included in the download")
                 
                 # Download section
                 st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
@@ -514,18 +658,18 @@ def main():
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    # Create ZIP file
-                    zip_data = create_zip_from_matches(matched_images, ref_files_dict)
+                    # Create ZIP file with custom names
+                    zip_data = create_zip_from_matches(matched_images, ref_files_dict, custom_name)
                     st.download_button(
-                        label="📥 Download All Matches as ZIP",
+                        label=f"📥 Download All Matches as {custom_name}_*.jpg",
                         data=zip_data,
-                        file_name=f"image_matches_{len(matched_images)}_images.zip",
+                        file_name=f"{custom_name}_matches_{len(matched_images)}_images.zip",
                         mime="application/zip"
                     )
                 
                 with col2:
-                    # Additional info
-                    st.info(f"💡 {len(matched_images)} images ready for download with similarity scores in filenames!")
+                    # Preview of naming
+                    st.info(f"💡 {len(matched_images)} images will be downloaded with names: `{custom_name}_1`, `{custom_name}_2`, etc.")
             
             else:
                 st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
@@ -554,7 +698,9 @@ def main():
             <h3 style="color: white; margin-bottom: 1.5rem;">🚀 Welcome to AI Image Matching!</h3>
             <p style="color: rgba(255,255,255,0.8); font-size: 1.1rem; line-height: 1.6;">
                 Upload a query image and reference images to find the best matches using deep learning.<br><br>
-                <strong>✨ Features:</strong><br>
+                <strong>✨ New Features:</strong><br>
+                • 📁 Upload individual images or ZIP folders<br>
+                • 🏷️ Custom naming for downloaded matches<br>
                 • ResNet-50 deep learning model<br>
                 • Cosine similarity matching<br>
                 • Batch processing & ZIP download<br>
