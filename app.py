@@ -15,7 +15,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import zipfile
 import io
 
-st.set_page_config(page_title="AI Image Matcher", layout="wide")
+st.set_page_config(page_title="PixelMatch", layout="wide")
 
 # Custom CSS for beautiful UI
 st.markdown("""
@@ -180,7 +180,7 @@ def extract_images_from_zip(zip_file):
 
 # Main Application
 def main():
-    st.markdown('<h1 class="main-title">🧠 AI Image Matcher</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-title">PixelMatch</h1>', unsafe_allow_html=True)
     
     col1, col2 = st.columns([1, 1])
     
